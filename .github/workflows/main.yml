@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -32,31 +36,26 @@ jobs:
           chmod +x antman
           ./antman -S
 
-          # Detect layout
           if [ -d "neutron-clang/bin" ]; then
             CLANG_DIR="$PWD/neutron-clang"
-          elif [ -d "bin" ] && [ -f "build.info" ]; then
-            CLANG_DIR="$PWD"
           else
             CLANG_DIR=$(find . -maxdepth 1 -type d -name "neutron-*" | head -n1)
-            if [ -z "$CLANG_DIR" ]; then
-              echo "❌ No neutron-clang directory found!" >&2
-              ls -la
-              exit 1
-            fi
           fi
 
-          echo "✅ Neutron Clang ready at: $CLANG_DIR"
+          if [ -z "$CLANG_DIR" ]; then
+            echo "❌ Neutron Clang not found!"
+            exit 1
+          fi
+
           echo "clang_dir=$CLANG_DIR" >> $GITHUB_OUTPUT
+          echo "✅ Clang: $CLANG_DIR"
 
       - name: Show toolchain info
         run: |
           export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
           clang --version || true
-          df -h
 
       - name: Build kernel
-        shell: bash
         env:
           PATH: ${{ steps.neutron.outputs.clang_dir }}/bin:$PATH
           CLANG_DIR: ${{ steps.neutron.outputs.clang_dir }}
@@ -71,5 +70,5 @@ jobs:
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ github.ref_name }}-${{ github.run_number }}
-          path: out/*.zip
+          name: Rectilia-vayu-${{ github.run_number }}
+          path: ./*.zip
