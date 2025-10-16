@@ -1,27 +1,29 @@
-name: Kernel Build (Neutron Clang)
+name: Build Vayu KSUNEXT Kernel (Neutron Clang)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     env:
       CONFIG_FILE: vayu_defconfig
       ARCH: arm64
-      CLANG_DIR: ${{ runner.workspace }}/tc/neutron-clang
-      CCACHE_DIR: ${{ runner.workspace }}/.ccache
+      CLANG_DIR: ${{ github.workspace }}/tc/neutron-clang
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
-    - name: Checkout repo
+    - name: Checkout source
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    - name: Install packages
+    - name: Install required packages
       run: |
         sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y bc python2 ccache binutils-aarch64-linux-gnu cpio zip git wget
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          bc python2 ccache binutils-aarch64-linux-gnu cpio zip git wget
 
     - name: Setup ccache
       run: |
@@ -29,43 +31,38 @@ jobs:
         ccache --max-size=4G
         echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
 
-    - name: Download Neutron prebuilt (replace URL)
+    - name: Download Neutron Clang (Replace URL if needed)
       run: |
         mkdir -p $(dirname "${{ env.CLANG_DIR }}")
-        # Replace NEUTRON_URL with the real tarball/release asset URL
         NEUTRON_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06032023/neutron-clang.tar.xz"
         wget -q --show-progress -O /tmp/neutron.tar.xz "${NEUTRON_URL}" || true
         if [ -f /tmp/neutron.tar.xz ]; then
           mkdir -p "${{ env.CLANG_DIR }}"
-          tar -xf /tmp/neutron.tar.xz -C $(dirname "${{ env.CLANG_DIR }}" ) --strip-components=1
+          tar -xf /tmp/neutron.tar.xz -C "${{ github.workspace }}/tc" --strip-components=1
         else
-          echo "Neutron tarball not found; attempting git clone fallback"
+          echo "Tarball missing — cloning fallback"
           git clone --depth=1 https://github.com/Neutron-Toolchains/neutron-clang "${{ env.CLANG_DIR }}" || true
         fi
         echo "CLANG_DIR=${{ env.CLANG_DIR }}" >> $GITHUB_ENV
         echo "PATH=${{ env.CLANG_DIR }}/bin:$PATH" >> $GITHUB_ENV
 
-    - name: Show clang version
+    - name: Show Clang Version
       run: |
         clang --version || true
         which clang || true
 
     - name: Make build script executable
-      run: |
-        chmod +x build.sh
+      run: chmod +x build.sh
 
-    - name: Run build.sh
-      run: |
-        ./build.sh
+    - name: Run Kernel Build
+      run: ./build.sh
       env:
         CLANG_DIR: ${{ env.CLANG_DIR }}
         CCACHE_DIR: ${{ env.CCACHE_DIR }}
 
-    - name: Upload built zip
+    - name: Upload final Kernel Zip
       uses: actions/upload-artifact@v3
       with:
-        name: kernel-zip
+        name: Vayu-Kernel-Zip
         path: |
           *.zip
-          out/arch/arm64/boot/Image
-
