@@ -1,7 +1,7 @@
 name: Build Vayu KSUNEXT Kernel (Neutron Clang)
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual workflow trigger
 
 jobs:
   build:
@@ -11,56 +11,45 @@ jobs:
       CONFIG_FILE: vayu_defconfig
       ARCH: arm64
       CLANG_DIR: ${{ github.workspace }}/tc/neutron-clang
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
-    - name: Checkout source
+    - name: Checkout Kernel Source
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    - name: Install required packages
+    - name: Install Dependencies
       run: |
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           bc python2 ccache binutils-aarch64-linux-gnu cpio zip git wget
 
-    - name: Setup ccache
+    - name: Download Neutron Clang
       run: |
-        mkdir -p "${{ env.CCACHE_DIR }}"
-        ccache --max-size=4G
-        echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
-
-    - name: Download Neutron Clang (Replace URL if needed)
-      run: |
-        mkdir -p $(dirname "${{ env.CLANG_DIR }}")
+        mkdir -p $(dirname "${CLANG_DIR}")
         NEUTRON_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06032023/neutron-clang.tar.xz"
         wget -q --show-progress -O /tmp/neutron.tar.xz "${NEUTRON_URL}" || true
         if [ -f /tmp/neutron.tar.xz ]; then
-          mkdir -p "${{ env.CLANG_DIR }}"
-          tar -xf /tmp/neutron.tar.xz -C "${{ github.workspace }}/tc" --strip-components=1
+          mkdir -p "${CLANG_DIR}"
+          tar -xf /tmp/neutron.tar.xz -C "${{ github.workspace }}/tc"
         else
           echo "Tarball missing — cloning fallback"
-          git clone --depth=1 https://github.com/Neutron-Toolchains/neutron-clang "${{ env.CLANG_DIR }}" || true
+          git clone --depth=1 https://github.com/Neutron-Toolchains/neutron-clang "${CLANG_DIR}" || true
         fi
-        echo "CLANG_DIR=${{ env.CLANG_DIR }}" >> $GITHUB_ENV
-        echo "PATH=${{ env.CLANG_DIR }}/bin:$PATH" >> $GITHUB_ENV
+        echo "PATH=${CLANG_DIR}/bin:$PATH" >> $GITHUB_ENV
 
     - name: Show Clang Version
       run: |
         clang --version || true
         which clang || true
 
-    - name: Make build script executable
+    - name: Make build.sh Executable
       run: chmod +x build.sh
 
     - name: Run Kernel Build
       run: ./build.sh
-      env:
-        CLANG_DIR: ${{ env.CLANG_DIR }}
-        CCACHE_DIR: ${{ env.CCACHE_DIR }}
 
-    - name: Upload final Kernel Zip
+    - name: Upload Kernel ZIP
       uses: actions/upload-artifact@v3
       with:
         name: Vayu-Kernel-Zip
