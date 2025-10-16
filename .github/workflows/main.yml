@@ -1,96 +1,48 @@
-name: Build Rectilia (Neutron Clang)
+name: Build Vayu Kernel (Neutron Clang)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     env:
       ARCH: arm64
-      CONFIG_FILE: vayu_defconfig
-      KBUILD_BUILD_HOST: clhexftw
-      KBUILD_BUILD_USER: home
-      # keep kernel name consistent
-      KERNEL_NAME: Rectilia-vayu-KSUNEXT
+      SUBARCH: arm64
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Checkout Kernel Source
+      uses: actions/checkout@v3
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc python2 ccache binutils-aarch64-linux-gnu cpio zip unzip git
-          # ensure python2 is available as python if your build.sh expects "python2"
-          sudo ln -sf $(which python2) /usr/bin/python || true
+    - name: Set Swap (Avoid OOM)
+      uses: pierotofy/set-swap-space@v1.0
+      with:
+        swap-size-gb: 10
 
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-
+    - name: Setup Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git bc python2 ccache binutils-aarch64-linux-gnu cpio
 
-      - name: Download AntMan (Neutron toolchain manager) and sync latest Neutron Clang
-        run: |
-          mkdir -p $HOME/toolchains/neutron-clang
-          cd $HOME/toolchains/neutron-clang
-          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
-          chmod +x antman
-          # -S (sync) will fetch the latest build per AntMan docs
-          ./antman -S
-        shell: bash
+    - name: Download Neutron Clang
+      run: |
+        mkdir -p tc
+        cd tc
+        git clone --depth=1 https://github.com/Neutron-Toolchains/clang.git neutron-clang
+        cd ..
 
-      - name: Locate latest Neutron clang directory
-        id: find_clang
-        run: |
-          # AntMan stores builds as directories; pick newest directory
-          TOOLCHAIN_ROOT="$HOME/toolchains/neutron-clang"
-          if [ ! -d "$TOOLCHAIN_ROOT" ] || [ -z "$(ls -A $TOOLCHAIN_ROOT)" ]; then
-            echo "No toolchain found. Aborting."
-            exit 1
-          fi
-          CLANG_DIR=$(ls -dt "$TOOLCHAIN_ROOT"/* | head -n1)
-          echo "clang_dir=$CLANG_DIR" >> $GITHUB_OUTPUT
+    - name: Grant Build Script Permission
+      run: chmod +x build.sh
 
-      - name: Show clang version (sanity)
-        run: |
-          echo "Using CLANG at: ${{ steps.find_clang.outputs.clang_dir }}"
-          ${{ steps.find_clang.outputs.clang_dir }}/bin/clang --version || true
+    - name: Run Build Script
+      run: |
+        export PATH="$GITHUB_WORKSPACE/tc/neutron-clang/bin:$PATH"
+        ./build.sh
 
-      - name: Make build.sh executable
-        run: |
-          chmod +x ./build.sh || true
-
-      - name: Export env for build.sh and run build
-        env:
-          CLANG_DIR: ${{ steps.find_clang.outputs.clang_dir }}
-          TC_DIR: $HOME/toolchains
-          HOME: $HOME
-          CCACHE_DIR: $HOME/.ccache
-          PATH: ${{ steps.find_clang.outputs.clang_dir }}/bin:${{ env.PATH }}
-        run: |
-          echo "CLANG_DIR=$CLANG_DIR"
-          # ensure build.sh uses these env vars
-          export CLANG_DIR="$CLANG_DIR"
-          export TC_DIR="$TC_DIR"
-          ./build.sh
-        shell: bash
-
-      - name: Upload ZIP artifact
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-zip
-          path: |
-            *.zip
-            out/arch/arm64/boot/Image || true
+    - name: Upload Kernel ZIP
+      if: success()
+      uses: actions/upload-artifact@v3
+      with:
+        name: Kernel-Zip
+        path: "*.zip"
