@@ -8,8 +8,6 @@ CCACHE=$(command -v ccache)
 objdir="${kernel_dir}/out"
 anykernel=$HOME/anykernel
 builddir="${kernel_dir}/build"
-ZIMAGE="${objdir}/arch/arm64/boot/Image"
-DTBOIMAGE="${objdir}/arch/arm64/boot/dtbo.img"
 
 kernel_name="Rectilia-vayu-KSUNEXT"
 zip_name="$kernel_name-$(date +"%d%m%Y-%H%M").zip"
@@ -51,38 +49,49 @@ compile() {
 
 completion() {
     cd "${objdir}"
-    COMPILED_IMAGE="arch/arm64/boot/Image"
-    COMPILED_DTBO="arch/arm64/boot/dtbo.img"
 
-    # ✅ FIXED: proper file existence check
-    if [[ -f ${COMPILED_IMAGE} && -f ${COMPILED_DTBO} ]]; then
-        echo -e "${LGR}Kernel and DTBO compiled successfully.${NC}"
-
-        # Clone AK3
-        git clone -q https://github.com/clhexftw/AnyKernel3 -b master "$anykernel"
-
-        # ✅ Safer mv with absolute paths
-        cp -f "${objdir}/${COMPILED_IMAGE}" "$anykernel/Image"
-        cp -f "${objdir}/${COMPILED_DTBO}" "$anykernel/dtbo.img"
-
-        cd "$anykernel"
-        rm -f *.zip
-        zip -r AnyKernel.zip *
-        mv AnyKernel.zip "${kernel_dir}/${zip_name}"
-        rm -rf "$anykernel"
-
-        END=$(date +"%s")
-        DIFF=$((END - START))
-        echo -e "${LGR}############################################"
-        echo -e "${LGR}############# OkThisIsEpic!  ##############"
-        echo -e "${LGR}############################################${NC}"
-        exit 0
+    # Handle both Image.gz and Image
+    if [[ -f arch/arm64/boot/Image.gz ]]; then
+        COMPILED_IMAGE="arch/arm64/boot/Image.gz"
+    elif [[ -f arch/arm64/boot/Image ]]; then
+        COMPILED_IMAGE="arch/arm64/boot/Image"
     else
-        echo -e "${RED}############################################"
-        echo -e "${RED}##         This Is Not Epic :'(           ##"
-        echo -e "${RED}############################################${NC}"
+        echo -e "${RED}Kernel image not found (neither Image.gz nor Image).${NC}"
         exit 1
     fi
+
+    # DTBO is optional
+    COMPILED_DTBO=""
+    if [[ -f arch/arm64/boot/dtbo.img ]]; then
+        COMPILED_DTBO="arch/arm64/boot/dtbo.img"
+    fi
+
+    echo -e "${LGR}Kernel compiled successfully.${NC}"
+    [ -n "$COMPILED_DTBO" ] && echo -e "${LGR}DTBO compiled successfully.${NC}"
+
+    # Clone AnyKernel3
+    git clone -q https://github.com/clhexftw/AnyKernel3 -b master "$anykernel"
+
+    # Copy kernel image
+    cp -f "${objdir}/${COMPILED_IMAGE}" "$anykernel/"
+
+    # Copy DTBO only if it exists
+    if [[ -n "$COMPILED_DTBO" ]]; then
+        cp -f "${objdir}/${COMPILED_DTBO}" "$anykernel/dtbo.img"
+    fi
+
+    cd "$anykernel"
+    rm -f *.zip
+    zip -r AnyKernel.zip *
+    mv AnyKernel.zip "${kernel_dir}/${zip_name}"
+    rm -rf "$anykernel"
+
+    END=$(date +"%s")
+    DIFF=$((END - START))
+    echo -e "${LGR}############################################"
+    echo -e "${LGR}############# OkThisIsEpic!  ##############"
+    echo -e "${LGR}############################################${NC}"
+    exit 0
 }
 
 make_defconfig
