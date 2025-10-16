@@ -25,7 +25,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
             build-essential cpio zip unzip git flex bison python3 zstd curl \
-            libssl-dev pkg-config
+            lld llvm clang
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
       - name: Setup Neutron Clang
@@ -38,41 +38,60 @@ jobs:
 
           curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
           chmod +x antman
-          ./antman -S
+          ./antman -S || true
 
-          echo "🔎 Searching for clang binary..."
-          CLANG_BIN=$(find "$PWD" -maxdepth 4 -type f -name "clang" -path "*/bin/clang" | head -n1)
+          echo "🔎 Probing for Neutron Clang directories..."
+          # Candidate roots to search (common antman layouts)
+          CANDIDATES=(
+            "$PWD"
+            "$PWD/clang"
+            "$PWD/neutron-clang"
+          )
 
-          if [ -z "$CLANG_BIN" ]; then
-            echo "❌ No clang binary found under $PWD."
-            echo "📂 Listing contents for debugging:"
-            ls -la "$PWD"
-            echo "🧭 Trying deeper search..."
-            CLANG_BIN=$(find "$PWD" -maxdepth 8 -type f -name "clang" -path "*/bin/clang" | head -n1)
+          # Add any neutron-* dirs to candidates
+          for d in "$PWD"/neutron-* "$PWD"/clang-*; do
+            [ -d "$d" ] && CANDIDATES+=("$d")
+          done
+
+          # Search for a directory that contains bin/clang
+          CLANG_DIR=""
+          for root in "${CANDIDATES[@]}"; do
+            match=$(find "$root" -maxdepth 3 -type d -name bin -exec test -x "{}"/clang \; -print 2>/dev/null | head -n1)
+            if [ -n "$match" ]; then
+              CLANG_DIR=$(dirname "$match")
+              break
+            fi
+          done
+
+          if [ -z "$CLANG_DIR" ]; then
+            echo "❌ Neutron Clang not found in expected locations."
+            echo "📂 Directory listing for debugging:"
+            echo ">> $PWD"
+            ls -la "$PWD" || true
+            if [ -d "$PWD/clang" ]; then
+              echo ">> $PWD/clang"
+              ls -la "$PWD/clang" || true
+            fi
+            echo "🧭 Deep search (may be slow)..."
+            match=$(find "$PWD" -maxdepth 8 -type d -name bin -exec test -x "{}"/clang \; -print 2>/dev/null | head -n1)
+            if [ -n "$match" ]; then
+              CLANG_DIR=$(dirname "$match")
+            fi
           fi
 
-          if [ -z "$CLANG_BIN" ]; then
-            echo "❌ Neutron Clang not found after deep search."
-            exit 1
+          if [ -z "$CLANG_DIR" ]; then
+            echo "⚠️ Falling back to system LLVM/Clang (AOSP-like) to proceed."
+            # Use system clang/lld installed earlier
+            echo "clang_dir=/usr" >> "$GITHUB_OUTPUT"
+          else
+            echo "✅ Using CLANG_DIR: $CLANG_DIR"
+            echo "clang_dir=$CLANG_DIR" >> "$GITHUB_OUTPUT"
           fi
-
-          # Derive toolchain directory: .../neutron-xxxx/bin/clang -> .../neutron-xxxx
-          CLANG_DIR=$(dirname "$(dirname "$CLANG_BIN")")
-
-          echo "✅ Found clang at: $CLANG_BIN"
-          echo "✅ Using CLANG_DIR: $CLANG_DIR"
-
-          # Final sanity check
-          if [ ! -x "$CLANG_DIR/bin/clang" ]; then
-            echo "❌ CLANG_DIR does not contain a valid bin/clang: $CLANG_DIR"
-            exit 1
-          fi
-
-          echo "clang_dir=$CLANG_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Show toolchain info
         run: |
           export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
+          echo "PATH: $PATH"
           clang --version || true
           ld.lld --version || true
 
