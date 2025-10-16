@@ -2,36 +2,80 @@ name: Kernel Build (Neutron Clang)
 
 on:
   push:
-    branches:
-      - '*'
+    branches: ['*']
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
 
     steps:
-      - name: 📥 Checkout source
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: 🧰 Set up build environment
+      - name: Prepare runner (install deps)
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y \
-            bc ccache binutils-aarch64-linux-gnu cpio zip unzip git flex bison \
-            libssl-dev build-essential libncurses5-dev
+          sudo apt-get install -y --no-install-recommends \
+            bc ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
+            build-essential cpio zip unzip git flex bison python3 \
+            zstd curl
 
-          # Ensure python is available (for old scripts)
-          sudo apt-get install -y python3
+          # Ensure 'python' is available for any legacy scripts
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-      - name: ⚙️ Run build script
+      - name: Free up some disk space (avoid linker OOM)
+        run: |
+          # remove some large preinstalled packages that aren't required for this build
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
+          df -h
+
+      - name: Install AntMan (Neutron manager) and sync latest build
+        id: neutron
+        run: |
+          mkdir -p $HOME/toolchains/neutron-clang
+          cd $HOME/toolchains/neutron-clang
+          # fetch AntMan and run sync (-S) which downloads the latest build into this dir
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+          chmod +x antman
+          ./antman -S
+          # AntMan creates a directory named like "neutron-clang-05012024" (or similar)
+          # Normalize to "clang" for consistent PATH usage
+          CLANG_DIR=$(find . -maxdepth 1 -type d -name "neutron-*" | head -n1)
+          if [ -z "$CLANG_DIR" ]; then
+            echo "No neutron build found after antman sync!" >&2
+            ls -la
+            exit 1
+          fi
+          mv -f "$CLANG_DIR" clang
+          echo "Neutron toolchain installed to: $HOME/toolchains/neutron-clang/clang"
+          echo "clang_dir=$HOME/toolchains/neutron-clang/clang" >> $GITHUB_OUTPUT
+
+      - name: Show toolchain info
+        run: |
+          export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
+          clang --version || true
+          ls -la "${{ steps.neutron.outputs.clang_dir }}/bin" || true
+
+      - name: Make workspace directory
+        run: |
+          mkdir -p /workspace
+
+      - name: Run build.sh
+        env:
+          PATH: ${{ steps.neutron.outputs.clang_dir }}/bin:$PATH
         run: |
           chmod +x build.sh
+          # Ensure build.sh sees the same PATH (and TC dir location) as CI
+          export TC_DIR="$HOME/toolchains/neutron-clang/clang"
+          export CLANG_DIR="$HOME/toolchains/neutron-clang/clang"
+          export PATH="$CLANG_DIR/bin:$PATH"
           ./build.sh
 
-      - name: 📦 Upload built zip
+      - name: Upload kernel zip artifact
+        if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Built-Kernel
+          name: kernel-zip-${{ github.ref_name }}-${{ github.run_number }}
           path: /workspace/*.zip
