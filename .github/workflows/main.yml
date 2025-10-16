@@ -3,39 +3,35 @@ name: Kernel Build (Neutron Clang)
 on:
   push:
     branches:
-      - '*'          # run on all branches
-  workflow_dispatch: # allow manual trigger from Actions tab
+      - '*'
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout source
+      - name: 📥 Checkout source
         uses: actions/checkout@v4
 
-      - name: Prepare build environment
+      - name: 🧰 Set up build environment
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y bc python2 ccache binutils-aarch64-linux-gnu cpio zip unzip git flex bison
+          sudo apt-get install -y \
+            bc ccache binutils-aarch64-linux-gnu cpio zip unzip git flex bison \
+            libssl-dev build-essential libncurses5-dev
 
-      - name: Set up Neutron Clang (auto-handled)
-        run: |
-          mkdir -p $HOME/tc
-          if [ ! -d "$HOME/tc/neutron-clang" ]; then
-            echo "==> Downloading Neutron Clang..."
-            git clone --depth=1 https://github.com/Neutron-Clang/neutron-clang.git $HOME/tc/neutron-clang
-          fi
-          export PATH="$HOME/tc/neutron-clang/bin:$PATH"
-          echo "Neutron Clang installed at $HOME/tc/neutron-clang"
+          # Ensure python is available (for old scripts)
+          sudo apt-get install -y python3
+          sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-      - name: Run build.sh
+      - name: ⚙️ Run build script
         run: |
           chmod +x build.sh
-          mkdir -p /workspace
-          bash build.sh
+          ./build.sh
 
-      - name: Upload build artifact (kernel zip)
+      - name: 📦 Upload built zip
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Zip
+          name: Built-Kernel
           path: /workspace/*.zip
