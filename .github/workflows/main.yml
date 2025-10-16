@@ -24,33 +24,57 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             bc ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
-            build-essential cpio zip unzip git flex bison python3 zstd curl
+            build-essential cpio zip unzip git flex bison python3 zstd curl \
+            libssl-dev pkg-config
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
       - name: Setup Neutron Clang
         id: neutron
         run: |
+          set -e
           echo "🔧 Setting up Neutron Clang..."
-          mkdir -p $HOME/toolchains && cd $HOME/toolchains
+          mkdir -p "$HOME/toolchains"
+          cd "$HOME/toolchains"
+
           curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
           chmod +x antman
           ./antman -S
 
-          # Detect extracted folder (handles neutron-clang-YYYYMMDD style)
-          CLANG_DIR=$(realpath "$(find "$PWD" -maxdepth 1 -type d -name "neutron-*" | head -n1)")
+          echo "🔎 Searching for clang binary..."
+          CLANG_BIN=$(find "$PWD" -maxdepth 4 -type f -name "clang" -path "*/bin/clang" | head -n1)
 
-          if [ -z "$CLANG_DIR" ]; then
-            echo "❌ Neutron Clang not found!"
+          if [ -z "$CLANG_BIN" ]; then
+            echo "❌ No clang binary found under $PWD."
+            echo "📂 Listing contents for debugging:"
+            ls -la "$PWD"
+            echo "🧭 Trying deeper search..."
+            CLANG_BIN=$(find "$PWD" -maxdepth 8 -type f -name "clang" -path "*/bin/clang" | head -n1)
+          fi
+
+          if [ -z "$CLANG_BIN" ]; then
+            echo "❌ Neutron Clang not found after deep search."
             exit 1
           fi
 
-          echo "clang_dir=$CLANG_DIR" >> $GITHUB_OUTPUT
-          echo "✅ Clang: $CLANG_DIR"
+          # Derive toolchain directory: .../neutron-xxxx/bin/clang -> .../neutron-xxxx
+          CLANG_DIR=$(dirname "$(dirname "$CLANG_BIN")")
+
+          echo "✅ Found clang at: $CLANG_BIN"
+          echo "✅ Using CLANG_DIR: $CLANG_DIR"
+
+          # Final sanity check
+          if [ ! -x "$CLANG_DIR/bin/clang" ]; then
+            echo "❌ CLANG_DIR does not contain a valid bin/clang: $CLANG_DIR"
+            exit 1
+          fi
+
+          echo "clang_dir=$CLANG_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Show toolchain info
         run: |
           export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
           clang --version || true
+          ld.lld --version || true
 
       - name: Build kernel
         env:
@@ -58,6 +82,7 @@ jobs:
           CLANG_DIR: ${{ steps.neutron.outputs.clang_dir }}
           TC_DIR: ${{ steps.neutron.outputs.clang_dir }}
         run: |
+          set -e
           chmod +x build.sh
           mkdir -p out
           echo "🚀 Starting kernel build..."
@@ -78,3 +103,4 @@ jobs:
           path: |
             out/arch/arm64/boot/Image*
             out/arch/arm64/boot/dtbo.img
+          if-no-files-found: ignore
