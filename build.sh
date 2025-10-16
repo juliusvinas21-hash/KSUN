@@ -21,6 +21,7 @@ export KBUILD_BUILD_USER=home
 export PATH="$CLANG_DIR/bin:$PATH"
 
 
+
 if ! [ -d "$CLANG_DIR" ]; then
     echo "Toolchain not found! Cloning to $CLANG_DIR..."
     if ! git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/ -b master $TC_DIR; then
