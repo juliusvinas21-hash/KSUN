@@ -1,7 +1,10 @@
 name: Kernel Build (Neutron Clang)
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - 16-disablet
+
 
 
 jobs:
