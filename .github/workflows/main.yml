@@ -1,10 +1,8 @@
 name: Kernel Build (Neutron Clang)
 
 on:
-  push:
-    branches:
-      - 16-disablet   # Only trigger on pushes to this branch
-  workflow_dispatch:   # Allow manual runs
+  workflow_dispatch:
+
 
 jobs:
   build:
@@ -68,7 +66,7 @@ jobs:
           ls -la "${{ steps.neutron.outputs.clang_dir }}/bin" || true
 
       - name: Create workspace
-        run: mkdir -p /workspace
+        run: mkdir -p ${{ github.workspace }}/workspace
 
       - name: Build kernel
         env:
@@ -78,6 +76,7 @@ jobs:
           export TC_DIR="${{ steps.neutron.outputs.clang_dir }}"
           export CLANG_DIR="${{ steps.neutron.outputs.clang_dir }}"
           export PATH="$CLANG_DIR/bin:$PATH"
+          export WORKSPACE="${{ github.workspace }}/workspace"
           ./build.sh
 
       - name: Upload built kernel
@@ -85,4 +84,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kernel-${{ github.ref_name }}-${{ github.run_number }}
-          path: /workspace/*.zip
+          path: ${{ github.workspace }}/workspace/*.zip
+
+
