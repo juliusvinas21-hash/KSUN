@@ -55,16 +55,15 @@ jobs:
           clang --version || true
           df -h
 
-      - name: Build kernel
+            - name: Build kernel
         env:
           PATH: ${{ steps.neutron.outputs.clang_dir }}/bin:$PATH
-          CLANG_DIR: ${{ steps.neutron.outputs.clang_dir }}
           TC_DIR: ${{ steps.neutron.outputs.clang_dir }}
-        run: |
-          chmod +x build.sh
-          mkdir -p out
-          echo "🚀 Starting kernel build..."
-          ./build.sh
+          CLANG_DIR: ${{ steps.neutron.outputs.clang_dir }}
+        run:
+          echo "==> Starting build..."
+          bash build.sh
+
 
       - name: Upload built kernel
         if: success() || failure()
