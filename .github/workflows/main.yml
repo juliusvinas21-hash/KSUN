@@ -1,48 +1,74 @@
-name: Build Vayu Kernel (Neutron Clang)
+name: Kernel Build (Neutron Clang)
 
 on:
+  push:
+    branches:
+      - 16-disablet
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-
-    env:
-      ARCH: arm64
-      SUBARCH: arm64
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
 
     steps:
-    - name: Checkout Kernel Source
-      uses: actions/checkout@v3
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-    - name: Set Swap (Avoid OOM)
-      uses: pierotofy/set-swap-space@v1.0
-      with:
-        swap-size-gb: 10
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            bc ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
+            build-essential cpio zip unzip git flex bison python3 zstd curl
+          sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-    - name: Setup Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git bc python2 ccache binutils-aarch64-linux-gnu cpio
+      - name: Setup Neutron Clang
+        id: neutron
+        run: |
+          echo "🔧 Setting up Neutron Clang..."
+          mkdir -p $HOME/toolchains && cd $HOME/toolchains
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+          chmod +x antman
+          ./antman -S
 
-    - name: Download Neutron Clang
-      run: |
-        mkdir -p tc
-        cd tc
-        git clone --depth=1 https://github.com/Neutron-Toolchains/clang.git neutron-clang
-        cd ..
+          # Detect layout
+          if [ -d "neutron-clang/bin" ]; then
+            CLANG_DIR="$PWD/neutron-clang"
+          elif [ -d "bin" ] && [ -f "build.info" ]; then
+            CLANG_DIR="$PWD"
+          else
+            CLANG_DIR=$(find . -maxdepth 1 -type d -name "neutron-*" | head -n1)
+            if [ -z "$CLANG_DIR" ]; then
+              echo "❌ No neutron-clang directory found!" >&2
+              ls -la
+              exit 1
+            fi
+          fi
 
-    - name: Grant Build Script Permission
-      run: chmod +x build.sh
+          echo "✅ Neutron Clang ready at: $CLANG_DIR"
+          echo "clang_dir=$CLANG_DIR" >> $GITHUB_OUTPUT
 
-    - name: Run Build Script
-      run: |
-        export PATH="$GITHUB_WORKSPACE/tc/neutron-clang/bin:$PATH"
-        ./build.sh
+      - name: Show toolchain info
+        run: |
+          export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
+          clang --version || true
+          df -h
 
-    - name: Upload Kernel ZIP
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: Kernel-Zip
-        path: "*.zip"
+      - name: Build kernel
+        env:
+          PATH: ${{ steps.neutron.outputs.clang_dir }}/bin:$PATH
+          CLANG_DIR: ${{ steps.neutron.outputs.clang_dir }}
+          TC_DIR: ${{ steps.neutron.outputs.clang_dir }}
+        run: |
+          chmod +x build.sh
+          mkdir -p out
+          echo "🚀 Starting kernel build..."
+          ./build.sh
+
+      - name: Upload built kernel
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ github.ref_name }}-${{ github.run_number }}
+          path: out/*.zip
