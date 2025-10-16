@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 16-disablet
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,21 +15,23 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Prepare runner (install dependencies)
+      - name: Prepare runner
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             bc ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
             build-essential cpio zip unzip git flex bison python3 zstd curl
           sudo ln -sf /usr/bin/python3 /usr/bin/python
+          echo "✅ System ready"
 
-      - name: Free up disk space
+      - name: Free space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
           df -h
 
-      - name: Install Neutron Clang via AntMan
+      - name: Install Neutron Clang
         id: neutron
+        shell: bash
         run: |
           mkdir -p $HOME/toolchains/neutron-clang
           cd $HOME/toolchains/neutron-clang
@@ -36,46 +39,33 @@ jobs:
           chmod +x antman
           ./antman -S
 
-          if [ -d "bin" ] && [ -f "build.info" ]; then
-            CLANG_DIR="$PWD"
-          else
-            CLANG_DIR=$(find . -maxdepth 1 -type d -name "neutron-*" | head -n1)
-            if [ -z "$CLANG_DIR" ]; then
-              echo "❌ No neutron build folder found after AntMan sync!" >&2
-              ls -la
-              exit 1
-            fi
-            mv -f "$CLANG_DIR" clang
-            CLANG_DIR="$PWD/clang"
-          fi
-
-          echo "✅ Neutron toolchain ready at: $CLANG_DIR"
+          CLANG_DIR=$(find . -maxdepth 1 -type d -name "neutron-*" | head -n1)
+          mv -f "$CLANG_DIR" clang
+          CLANG_DIR="$PWD/clang"
           echo "clang_dir=$CLANG_DIR" >> $GITHUB_OUTPUT
+          echo "✅ Neutron Clang ready at: $CLANG_DIR"
 
-      - name: Show toolchain info
+      - name: Show clang info
+        shell: bash
         run: |
           export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
-          clang --version || true
-          ls -la "${{ steps.neutron.outputs.clang_dir }}/bin" || true
-
-      - name: Create workspace
-        run: mkdir -p ${{ github.workspace }}/workspace
+          clang --version
 
       - name: Build kernel
         shell: bash
-        env:
-          PATH: ${{ steps.neutron.outputs.clang_dir }}/bin:$PATH
         run: |
+          echo "==> Starting build..."
           chmod +x build.sh
-          export TC_DIR="${{ steps.neutron.outputs.clang_dir }}"
           export CLANG_DIR="${{ steps.neutron.outputs.clang_dir }}"
           export PATH="$CLANG_DIR/bin:$PATH"
-          export WORKSPACE="${{ github.workspace }}/workspace"
           ./build.sh
 
-      - name: Upload built kernel
+      - name: Upload output
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
           name: kernel-${{ github.ref_name }}-${{ github.run_number }}
-          path: ${{ github.workspace }}/workspace/*.zip
+          path: |
+            out/*.zip
+            workspace/*.zip
+            *.zip
