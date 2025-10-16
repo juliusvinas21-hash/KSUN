@@ -9,14 +9,17 @@ builddir="${kernel_dir}/build"
 ZIMAGE=$kernel_dir/out/arch/arm64/boot/Image
 kernel_name="Rectilia-vayu-KSUNEXT"
 zip_name="$kernel_name-$(date +"%d%m%Y-%H%M").zip"
-TC_DIR=$HOME/tc
-CLANG_DIR=$HOME/tc/clang-r530567
+
+# Allow override from workflow (for Neutron Clang path)
+TC_DIR=${TC_DIR:-$HOME/tc}
+CLANG_DIR=${CLANG_DIR:-$HOME/tc/clang-r530567}
+
 export CONFIG_FILE="vayu_defconfig"
 export ARCH="arm64"
 export KBUILD_BUILD_HOST=clhexftw
 export KBUILD_BUILD_USER=home
-
 export PATH="$CLANG_DIR/bin:$PATH"
+
 
 if ! [ -d "$CLANG_DIR" ]; then
     echo "Toolchain not found! Cloning to $CLANG_DIR..."
