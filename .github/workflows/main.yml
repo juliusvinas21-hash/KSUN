@@ -41,19 +41,11 @@ jobs:
           ./antman -S || true
 
           echo "🔎 Probing for Neutron Clang directories..."
-          # Candidate roots to search (common antman layouts)
-          CANDIDATES=(
-            "$PWD"
-            "$PWD/clang"
-            "$PWD/neutron-clang"
-          )
-
-          # Add any neutron-* dirs to candidates
+          CANDIDATES=( "$PWD" "$PWD/clang" "$PWD/neutron-clang" )
           for d in "$PWD"/neutron-* "$PWD"/clang-*; do
             [ -d "$d" ] && CANDIDATES+=("$d")
           done
 
-          # Search for a directory that contains bin/clang
           CLANG_DIR=""
           for root in "${CANDIDATES[@]}"; do
             match=$(find "$root" -maxdepth 3 -type d -name bin -exec test -x "{}"/clang \; -print 2>/dev/null | head -n1)
@@ -64,15 +56,7 @@ jobs:
           done
 
           if [ -z "$CLANG_DIR" ]; then
-            echo "❌ Neutron Clang not found in expected locations."
-            echo "📂 Directory listing for debugging:"
-            echo ">> $PWD"
-            ls -la "$PWD" || true
-            if [ -d "$PWD/clang" ]; then
-              echo ">> $PWD/clang"
-              ls -la "$PWD/clang" || true
-            fi
-            echo "🧭 Deep search (may be slow)..."
+            echo "🧭 Deep search..."
             match=$(find "$PWD" -maxdepth 8 -type d -name bin -exec test -x "{}"/clang \; -print 2>/dev/null | head -n1)
             if [ -n "$match" ]; then
               CLANG_DIR=$(dirname "$match")
@@ -80,32 +64,70 @@ jobs:
           fi
 
           if [ -z "$CLANG_DIR" ]; then
-            echo "⚠️ Falling back to system LLVM/Clang (AOSP-like) to proceed."
-            # Use system clang/lld installed earlier
+            echo "⚠️ Falling back to system LLVM/Clang to proceed."
             echo "clang_dir=/usr" >> "$GITHUB_OUTPUT"
           else
             echo "✅ Using CLANG_DIR: $CLANG_DIR"
             echo "clang_dir=$CLANG_DIR" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Show toolchain info
+      - name: Show toolchain info and derive cache key
+        id: toolinfo
         run: |
           export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
           echo "PATH: $PATH"
           clang --version || true
           ld.lld --version || true
 
+          # Derive a cache key suffix from clang version (stable across runs with same toolchain)
+          ver=$(clang --version 2>/dev/null | head -n1 | tr -s ' ' '_' || echo "system_clang")
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ steps.toolinfo.outputs.ver }}-${{ github.ref }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ steps.toolinfo.outputs.ver }}-
+            ccache-${{ runner.os }}-
+
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache --version || true
+          ccache --set-config cache_dir="$HOME/.ccache"
+          ccache --set-config max_size=5G
+          ccache --set-config compression=true
+          ccache --show-config || true
+
       - name: Build kernel
         env:
-          PATH: ${{ steps.neutron.outputs.clang_dir }}/bin:$PATH
           CLANG_DIR: ${{ steps.neutron.outputs.clang_dir }}
           TC_DIR: ${{ steps.neutron.outputs.clang_dir }}
+          CCACHE_DIR: ${{ runner.temp }}/.ccache
         run: |
           set -e
+          # Prepend toolchain to PATH without losing system paths
+          export PATH="${CLANG_DIR}/bin:$PATH"
+
+          # Ensure ccache dir exists (use home cache, but keep env var explicit)
+          export CCACHE_DIR="$HOME/.ccache"
+
+          # Sanity checks
+          which chmod
+          which clang
+          which ld.lld
+          which ccache
+
           chmod +x build.sh
           mkdir -p out
           echo "🚀 Starting kernel build..."
           ./build.sh
+
+      - name: Show ccache stats
+        run: |
+          ccache -s || true
 
       - name: Upload flashable zip
         if: success() || failure()
