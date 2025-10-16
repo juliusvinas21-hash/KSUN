@@ -56,6 +56,7 @@ jobs:
           df -h
 
       - name: Build kernel
+        shell: bash
         env:
           PATH: ${{ steps.neutron.outputs.clang_dir }}/bin:$PATH
           CLANG_DIR: ${{ steps.neutron.outputs.clang_dir }}
