@@ -1,6 +1,9 @@
 name: Kernel Build (Neutron Clang Pinned - FORKY)
 
 on:
+  push:
+    branches:
+      - '*'
   workflow_dispatch:
 
 permissions:
