@@ -63,9 +63,18 @@ jobs:
           echo "🚀 Starting kernel build..."
           ./build.sh
 
-      - name: Upload built kernel
+      - name: Upload flashable zip
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Rectilia-vayu-${{ github.run_number }}
+          name: Rectilia-vayu-${{ github.run_number }}-zip
           path: ./*.zip
+
+      - name: Upload raw kernel outputs
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rectilia-vayu-${{ github.run_number }}-raw
+          path: |
+            out/arch/arm64/boot/Image*
+            out/arch/arm64/boot/dtbo.img
