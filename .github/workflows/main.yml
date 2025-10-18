@@ -76,6 +76,7 @@ jobs:
         run: |
           export PATH="${{ steps.neutron.outputs.clang_dir }}/bin:$PATH"
           echo "PATH: $PATH"
+          test -x "${{ steps.neutron.outputs.clang_dir }}/bin/clang" || (echo "Neutron Clang not found at ${{ steps.neutron.outputs.clang_dir }}; aborting"; exit 1)
           clang --version || true
           ld.lld --version || true
 
