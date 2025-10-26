@@ -1,27 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Xiaomi Touch Feature configuration
+#
+
+menu "Xiaomi Touchscreen Features"
+
 config TOUCHSCREEN_XIAOMI_TOUCHFEATURE
-	tristate "Xiaomi Touch Feature"
+	tristate "Xiaomi Touch Core Feature"
 	depends on INPUT_TOUCHSCREEN
 	help
-	  Say Y here if you enable xiaomi touch feature.
+	  Core Xiaomi touchscreen driver providing advanced touch handling
+	  such as GameMode, PalmSensor, and related gesture features.
 
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here:
 config TOUCHSCREEN_XIAOMI_TOUCHFEATURE_PALMSENSOR
-	tristate "Xiaomi Touch GameMode"
+	bool "Xiaomi Touch PalmSensor"
 	depends on TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 	help
-	  Say Y here if you enable xiaomi touch feature.
+	  Enable palm rejection / palm detection support for Xiaomi touchscreen.
 
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here:
 config TOUCHSCREEN_XIAOMI_TOUCHFEATURE_GAMEMODE
-	tristate "Xiaomi Touch GameMode"
+	bool "Xiaomi Touch GameMode"
 	depends on TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 	help
-	  Say Y here if you enable xiaomi touch feature.
+	  Enable touch latency optimization and sensitivity tuning for gaming.
 
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here:
+endmenu
